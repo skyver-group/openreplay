@@ -449,9 +449,9 @@ def get_all_notes(projectId: int, data: schemas.SearchNoteSchema = Body(...),
     return {'data': data}
 
 
-@app.post('/{projectId}/dashboard/insights', tags=["insights"])
-@app.post('/{projectId}/dashboard/insights', tags=["insights"])
-def sessions_search(projectId: int, data: schemas.GetInsightsPayloadSchema = schemas.Body(...),
-                    context: schemas.CurrentContext = schemas.Depends(schemas.OR_context)):
-    return sessions_insights.fetch_selected(selectedEvents=data.selectedEvents, project_id=projectId, start_time=data.startDate,
-                        end_time=data.endDate, time_step=data.timestep)
+#@app.post('/{projectId}/dashboard/insights', tags=["insights"])
+#@app.post('/{projectId}/dashboard/insights', tags=["insights"])
+#def sessions_search(projectId: int, data: schemas.GetInsightsPayloadSchema = schemas.Body(...),
+#                    context: schemas.CurrentContext = schemas.Depends(schemas.OR_context)):
+#    return sessions_insights.fetch_selected(selectedEvents=data.selectedEvents, project_id=projectId, start_time=data.startDate,
+#                        end_time=data.endDate, time_step=data.timestep)

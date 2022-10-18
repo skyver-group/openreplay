@@ -7,7 +7,6 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"log"
-	"math"
 	"openreplay/backend/pkg/db/types"
 	"openreplay/backend/pkg/hashid"
 	"openreplay/backend/pkg/messages"
@@ -80,6 +79,7 @@ type Connector interface {
 	InsertRequest(session *types.Session, msg *messages.FetchEvent, savePayload bool) error
 	InsertCustom(session *types.Session, msg *messages.CustomEvent) error
 	InsertGraphQL(session *types.Session, msg *messages.GraphQLEvent) error
+	InsertIssue(session *types.Session, msg *messages.IssueEvent) error
 }
 
 type connectorImpl struct {
@@ -136,6 +136,8 @@ var batches = map[string]string{
 	"requests":      "INSERT INTO experimental.events (session_id, project_id, message_id, datetime, url, request_body, response_body, status, method, duration, success, event_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 	"custom":        "INSERT INTO experimental.events (session_id, project_id, message_id, datetime, name, payload, event_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
 	"graphql":       "INSERT INTO experimental.events (session_id, project_id, message_id, datetime, name, request_body, response_body, event_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+	"issuesEvents":  "INSERT INTO experimental.events (session_id, project_id, message_id, datetime, issue_id, issue_type, event_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+	"issues":        "INSERT INTO experimental.issues (project_id, issue_id, type, context_string) VALUES (?, ?, ?, ?)",
 }
 
 func (c *connectorImpl) Prepare() error {
@@ -160,6 +162,32 @@ func (c *connectorImpl) checkError(name string, err error) {
 	if err != clickhouse.ErrBatchAlreadySent {
 		log.Printf("can't create %s batch after failed append operation: %s", name, err)
 	}
+}
+
+func (c *connectorImpl) InsertIssue(session *types.Session, msg *messages.IssueEvent) error {
+	issueID := hashid.IssueID(session.ProjectID, msg)
+	if err := c.batches["issuesEvents"].Append(
+		session.SessionID,
+		uint16(session.ProjectID),
+		msg.MessageID,
+		datetime(msg.Timestamp),
+		issueID,
+		msg.Type,
+		"ISSUE",
+	); err != nil {
+		c.checkError("issuesEvents", err)
+		return fmt.Errorf("can't append to issuesEvents batch: %s", err)
+	}
+	if err := c.batches["issues"].Append(
+		uint16(session.ProjectID),
+		issueID,
+		msg.Type,
+		msg.ContextString,
+	); err != nil {
+		c.checkError("issues", err)
+		return fmt.Errorf("can't append to issues batch: %s", err)
+	}
+	return nil
 }
 
 func (c *connectorImpl) InsertWebSession(session *types.Session) error {
@@ -452,8 +480,4 @@ func datetime(timestamp uint64) time.Time {
 		return time.Now()
 	}
 	return t
-}
-
-func getSqIdx(messageID uint64) uint {
-	return uint(messageID % math.MaxInt32)
 }

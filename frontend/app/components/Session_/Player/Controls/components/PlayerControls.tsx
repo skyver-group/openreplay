@@ -52,6 +52,9 @@ function PlayerControls(props: Props) {
 
   React.useEffect(() => {
     const handleKeyboard = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
       if (e.key === 'ArrowRight') {
         arrowForwardRef.current.focus();
       }
@@ -121,6 +124,7 @@ function PlayerControls(props: Props) {
                   </div>
                   {Object.keys(skipIntervals).map((interval) => (
                     <div
+                      key={interval}
                       onClick={() => {
                         toggleTooltip();
                         setSkipInterval(parseInt(interval, 10));

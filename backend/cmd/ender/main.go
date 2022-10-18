@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"openreplay/backend/internal/storage"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,42 +20,27 @@ import (
 )
 
 func main() {
-	metrics := monitoring.New("ender")
-
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Llongfile)
-
-	// Load service configuration
+	metrics := monitoring.New("ender")
 	cfg := ender.New()
 
 	pg := cache.NewPGCache(postgres.NewConn(cfg.Postgres, 0, 0, metrics), cfg.ProjectExpirationTimeoutMs)
 	defer pg.Close()
 
-	// Init all modules
-	statsLogger := logger.NewQueueStats(cfg.LoggerTimeout)
-	sessions, err := sessionender.New(metrics, intervals.EVENTS_SESSION_END_TIMEOUT, cfg.PartitionsNumber)
+	sessions, err := sessionender.New(metrics, intervals.EVENTS_SESSION_END_TIMEOUT, cfg.PartitionsNumber, logger.NewQueueStats(cfg.LoggerTimeout))
 	if err != nil {
 		log.Printf("can't init ender service: %s", err)
 		return
 	}
+
 	producer := queue.NewProducer(cfg.MessageSizeLimit, true)
-
-	msgHandler := func(msg messages.Message) {
-		if msg.TypeID() == messages.MsgSessionStart || msg.TypeID() == messages.MsgSessionEnd {
-			return
-		}
-		if msg.Meta().Timestamp == 0 {
-			log.Printf("ZERO TS, sessID: %d, msgType: %d", msg.Meta().SessionID(), msg.TypeID())
-		}
-		statsLogger.Collect(msg)
-		sessions.UpdateSession(msg)
-	}
-
 	consumer := queue.NewConsumer(
 		cfg.GroupEnder,
-		[]string{
-			cfg.TopicRawWeb,
-		},
-		messages.NewMessageIterator(msgHandler, nil, false),
+		[]string{cfg.TopicRawWeb},
+		messages.NewMessageIterator(
+			func(msg messages.Message) { sessions.UpdateSession(msg) },
+			[]int{messages.MsgTimestamp},
+			false),
 		false,
 		cfg.MessageSizeLimit,
 	)
@@ -92,6 +78,15 @@ func main() {
 					log.Printf("sessionEnd duplicate, sessID: %d, prevDur: %d, newDur: %d", sessionID,
 						currDuration, newDuration)
 					return true
+				}
+				if cfg.UseEncryption {
+					if key := storage.GenerateEncryptionKey(); key != nil {
+						if err := pg.InsertSessionEncryptionKey(sessionID, key); err != nil {
+							log.Printf("can't save session encryption key: %s, session will not be encrypted", err)
+						} else {
+							msg.EncryptionKey = string(key)
+						}
+					}
 				}
 				if err := producer.Produce(cfg.TopicRawWeb, sessionID, msg.Encode()); err != nil {
 					log.Printf("can't send sessionEnd to topic: %s; sessID: %d", err, sessionID)

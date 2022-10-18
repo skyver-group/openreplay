@@ -66,8 +66,9 @@ class SessionStart(Message):
 class SessionEnd(Message):
     __id__ = 3
 
-    def __init__(self, timestamp):
+    def __init__(self, timestamp, encryption_key):
         self.timestamp = timestamp
+        self.encryption_key = encryption_key
 
 
 class SetPageLocation(Message):
@@ -213,15 +214,6 @@ class MouseMove(Message):
         self.y = y
 
 
-class MouseClickDepricated(Message):
-    __id__ = 21
-
-    def __init__(self, id, hesitation_time, label):
-        self.id = id
-        self.hesitation_time = hesitation_time
-        self.label = label
-
-
 class ConsoleLog(Message):
     __id__ = 22
 
@@ -254,7 +246,7 @@ class PageRenderTiming(Message):
         self.time_to_interactive = time_to_interactive
 
 
-class JSException(Message):
+class JSExceptionDeprecated(Message):
     __id__ = 25
 
     def __init__(self, name, message, payload):
@@ -750,6 +742,24 @@ class Zustand(Message):
     def __init__(self, mutation, state):
         self.mutation = mutation
         self.state = state
+
+
+class JSException(Message):
+    __id__ = 78
+
+    def __init__(self, name, message, payload, metadata):
+        self.name = name
+        self.message = message
+        self.payload = payload
+        self.metadata = metadata
+
+
+class SessionSearch(Message):
+    __id__ = 127
+
+    def __init__(self, timestamp, partition):
+        self.timestamp = timestamp
+        self.partition = partition
 
 
 class IOSBatchMeta(Message):

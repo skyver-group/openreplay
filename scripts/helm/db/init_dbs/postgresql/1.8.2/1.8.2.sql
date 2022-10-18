@@ -1,10 +1,8 @@
 BEGIN;
-
-ALTER TABLE sessions ADD file_key BYTEA NULL;
 CREATE OR REPLACE FUNCTION openreplay_version()
     RETURNS text AS
 $$
-SELECT 'v1.8.2-ee'
+SELECT 'v1.8.2'
 $$ LANGUAGE sql IMMUTABLE;
 
 ALTER TABLE IF EXISTS public.tenants

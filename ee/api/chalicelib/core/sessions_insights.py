@@ -1,7 +1,7 @@
-import pandas as pd
+#import pandas as pd
 from chalicelib.utils import ch_client
 from datetime import datetime, timedelta
-
+pd = None
 
 def __handle_timestep(time_step):
     base = "{0}"
@@ -30,6 +30,7 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.success) as success_rate,
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
+    return {}
     df = pd.DataFrame(res)
     del res
     first_ts, second_ts = df['hh'].unique()[:2]
@@ -73,6 +74,7 @@ SELECT T1.hh, count(T2.session_id) as sessions, T2.name as names, groupUniqArray
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
+    return {}
     df = pd.DataFrame(res)
     del res
     first_ts, second_ts = df['hh'].unique()[:2]
@@ -113,6 +115,7 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.avg_cpu) as cpu_used, avg
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
+    return {}
     df = pd.DataFrame(res)
     del res
     first_ts, second_ts = df['hh'].unique()[:2]
@@ -137,6 +140,7 @@ def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
+    return {}
     df = pd.DataFrame(res)
     del res
     first_ts, second_ts = df['hh'].unique()[:2]

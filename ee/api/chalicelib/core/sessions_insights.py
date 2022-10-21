@@ -1,7 +1,38 @@
 #import pandas as pd
 from chalicelib.utils import ch_client
 from datetime import datetime, timedelta
+import numpy as np
 pd = None
+
+#TODO Deal with None values
+
+def __get_two_values(response, time_index='hh', name_index='name'):
+    columns = list(response[0].keys())
+    name_index_val = columns.index(name_index)
+    time_index_value = columns.index(time_index)
+
+    table = [list(r.values()) for r in response]
+    table_hh1 = list()
+    table_hh2 = list()
+    hh_vals = list()
+    names_hh1 = list()
+    names_hh2 = list()
+    for e in table:
+        if e[time_index_value] not in hh_vals and len(hh_vals) == 2:
+            break
+        elif e[time_index_value] not in hh_vals:
+            hh_vals.append(e[time_index_value])
+
+        if len(hh_vals) == 1:
+            table_hh1.append(e)
+            if e[name_index_val] not in names_hh1:
+                names_hh1.append(e[name_index_val])
+        elif len(hh_vals) == 2:
+            table_hh2.append(e)
+            if e[name_index_val] not in names_hh2:
+                names_hh2.append(e[name_index_val])
+    return table_hh1, table_hh2, columns, names_hh1, names_hh2
+
 
 def __handle_timestep(time_step):
     base = "{0}"
@@ -30,32 +61,27 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.success) as success_rate,
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
-    return {}
-    df = pd.DataFrame(res)
+    table_hh1, table_hh2, columns, this_period_hosts, last_period_hosts = __get_two_values(res, time_index='hh', name_index='source')
     del res
-    first_ts, second_ts = df['hh'].unique()[:2]
-    df1 = df[df['hh'] == first_ts]
-    df2 = df[df['hh'] == second_ts]
-    last_period_hosts = df2['source'].unique()
-    this_period_hosts = df1['source'].unique()
+
     new_hosts = [x for x in this_period_hosts if x not in last_period_hosts]
     common_names = [x for x in this_period_hosts if x not in new_hosts]
+    table_hh1, table_hh2, this_period_hosts, last_period_hosts = np.array(table_hh1), np.array(table_hh2), np.array(this_period_hosts), np.array(last_period_hosts)
 
+    source_idx = columns.index('source')
+    duration_idx = columns.index('avg_duration')
+    success_idx = columns.index('success_rate')
     delta_duration = dict()
     delta_success = dict()
     for n in common_names:
-        df1_tmp = df1[df1['source'] == n]
-        df2_tmp = df2[df2['source'] == n]
-        delta_duration[n] = df1_tmp['avg_duration'].mean() - df2_tmp['avg_duration'].mean()
-        delta_success[n] = df1_tmp['success_rate'].mean() - df2_tmp['success_rate'].mean()
-    # Maybe change method to nsmallest(samples, label_to_order)
-    # return pd.DataFrame(delta_duration.items(), columns=['host', 'increase']).sort_values(by=['increase'], ascending=False),\
-    #        pd.DataFrame(delta_success.items(), columns=['host', 'increase']).sort_values(by=['increase'], ascending=True),\
-    #        df1.sort_values(by=['success_rate'], ascending=True)[['names', 'success_rate']],\
-    #        df1.sort_values(by=['avg_duration'], ascending=False)[['names', 'avg_duration']],\
-    #        new_hosts
-    df1 = df1.sort_values(by=['success_rate'], ascending=True)
-    return {'ratio': list(zip(df1['names']+df1['source'], df1['success_rate'])),
+        d1_tmp = table_hh1[table_hh1[:, source_idx] == n]
+        d2_tmp = table_hh2[table_hh2[:, source_idx] == n]
+        delta_duration[n] = d1_tmp[:, duration_idx].mean() - d2_tmp[:, duration_idx].mean()
+        delta_success[n] = d1_tmp[:, success_idx].mean() - d2_tmp[:, success_idx].mean()
+
+    names_idx = columns.index('names')
+    d1_tmp = d1_tmp[d1_tmp[:, success_idx].argsort()]
+    return {'ratio': list(zip(d1_tmp[:, names_idx] + d1_tmp[:, source_idx], d1_tmp[:, success_idx])),
             'increase': sorted(delta_success.items(), key=lambda k: k[1], reverse=False),
             'new_events': new_hosts}
 
@@ -74,34 +100,31 @@ SELECT T1.hh, count(T2.session_id) as sessions, T2.name as names, groupUniqArray
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
-    return {}
-    df = pd.DataFrame(res)
+
+    table_hh1, table_hh2, columns, this_period_errors, last_period_errors = __get_two_values(res, time_index='hh',
+                                                                                           name_index='names')
     del res
-    first_ts, second_ts = df['hh'].unique()[:2]
-    df1 = df[df['hh'] == first_ts]
-    df2 = df[df['hh'] == second_ts]
-    last_period_errors = df2['names'].unique()
-    this_period_errors = df1['names'].unique()
+
     new_errors = [x for x in this_period_errors if x not in last_period_errors]
     common_errors = [x for x in this_period_errors if x not in new_errors]
+    table_hh1, table_hh2, this_period_errors, last_period_errors = np.array(table_hh1), np.array(table_hh2), np.array(
+        this_period_errors), np.array(last_period_errors)
 
+    sessions_idx = columns.index('sessions')
+    names_idx = columns.index('names')
     percentage_errors = dict()
-    total = df1['sessions'].sum()
+    total = table_hh1[:, sessions_idx].sum()
     error_increase = dict()
     for n in this_period_errors:
-        percentage_errors[n] = (df1[df1['names']==n]['sessions'].sum())/total
+        percentage_errors[n] = (table_hh1[table_hh1[:, names_idx] == n][:, sessions_idx].sum())/total
     for n in common_errors:
-        error_increase[n] = df1[df1['names']==n]['sessions'].sum() - df2[df2['names']==n]['sessions'].sum()
-
-    # return pd.DataFrame(percentage_errors.items(), columns=['error', 'percentage']),\
-    #        pd.DataFrame(error_increase.items(), columns=['error', 'increase']),\
-    #        new_errors, df
-
+        error_increase[n] = table_hh1[table_hh1[:, names_idx] == n][:, names_idx].sum() - table_hh2[table_hh2[:, names_idx] == n][:, names_idx].sum()
     return {'ratio': sorted(percentage_errors.items(), key=lambda k: k[1], reverse=True),
             'increase': sorted(error_increase.items(), key=lambda k: k[1], reverse=True),
             'new_events': new_errors}
 
 
+#TODO Update model
 def query_cpu_memory_by_period(project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),
                         end_time=datetime.now().strftime('%Y-%m-%d'), time_step=3600, conn=None):
     function, steps = __handle_timestep(time_step)
@@ -115,7 +138,7 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.avg_cpu) as cpu_used, avg
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
-    return {}
+    return res
     df = pd.DataFrame(res)
     del res
     first_ts, second_ts = df['hh'].unique()[:2]
@@ -126,6 +149,7 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.avg_cpu) as cpu_used, avg
             'memory_increase': (df1['memory_used'].mean() - _tmp)/_tmp}
 
 
+#TODO Update model
 def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),
                         end_time=datetime.now().strftime('%Y-%m-%d'), time_step=3600, conn=None):
     function, steps = __handle_timestep(time_step)
@@ -140,10 +164,10 @@ def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
-    return {}
-    df = pd.DataFrame(res)
-    del res
-    first_ts, second_ts = df['hh'].unique()[:2]
+    return res
+    # df = pd.DataFrame(res)
+    # del res
+    first_ts, second_ts = set(res['hh'])[:2]
     df1 = df[df['hh'] == first_ts]
     df2 = df[df['hh'] == second_ts]
 
@@ -187,15 +211,6 @@ def fetch_selected(selectedEvents, project_id, start_time=(datetime.now()-timede
         if 'resources' in selectedEvents:
             output['resources'] = query_cpu_memory_by_period(project_id, start_time, end_time, time_step, conn=conn)
     return output
-
-# def query_click_rage_by_period2(project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),
-#                         end_time=datetime.now().strftime('%Y-%m-%d'), time_step=3600):
-#     function, steps = __handle_timestep(time_step)
-#     query = f"""WITH
-#   {function.format(f"toDateTime64('{start_time}', 0)")} as start,
-#   {function.format(f"toDateTime64('{end_time}', 0)")} as end
-# SELECT T1.hh, count(T2.t) as n_events, count(DISTINCT T2.issue_id) as distict_events FROM (SELECT arrayJoin(arrayMap(x -> toDateTime(x), range(toUInt32(start), toUInt32(end), {steps}))) as hh) AS T1
-#     LEFT JOIN (SELECT issue_id, {function.format('_timestamp')} as dtime, _timestamp as t FROM issues WHERE project_id = {project_id} AND type = 'click_rage') AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh ORDER BY T1.hh DESC;"""
 
 
 if __name__ == '__main__':

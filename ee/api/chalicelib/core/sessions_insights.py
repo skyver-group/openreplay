@@ -1,8 +1,52 @@
-#import pandas as pd
 from chalicelib.utils import ch_client
 from datetime import datetime, timedelta
-import numpy as np
-pd = None
+
+def _table_slice(table, index):
+    col = list()
+    for row in table:
+        col.append(row[index])
+    return col
+
+def _table_where(table, index, value):
+    new_table = list()
+    for row in table:
+        if row[index] == value:
+            new_table.append(row)
+    return new_table
+
+def _sum_table_index(table, index):
+    s = 0
+    count = 0
+    for row in table:
+        v = row[index]
+        if v is None:
+            continue
+        s += v
+        count += 1
+    return s
+
+def _mean_table_index(table, index):
+    s = _sum_table_index(table, index)
+    c = len(table)
+    return s/c
+
+def _sort_table_index(table, index, reverse=False):
+    return sorted(table, key= lambda k: k[index], reverse=reverse)
+
+def _select_rec(l, selector):
+    print('selector:', selector)
+    print('list:', l)
+    if len(selector) == 1:
+        return l[selector[0]]
+    else:
+        s = selector[0]
+        L = l[s]
+        type_ = type(s)
+        if type_ == slice:
+            return [_select_rec(l_, selector[1:]) for l_ in L]
+        elif type_ == int:
+            return [_select_rec(L, selector[1:])]
+
 
 #TODO Deal with None values
 
@@ -66,7 +110,6 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.success) as success_rate,
 
     new_hosts = [x for x in this_period_hosts if x not in last_period_hosts]
     common_names = [x for x in this_period_hosts if x not in new_hosts]
-    table_hh1, table_hh2, this_period_hosts, last_period_hosts = np.array(table_hh1), np.array(table_hh2), np.array(this_period_hosts), np.array(last_period_hosts)
 
     source_idx = columns.index('source')
     duration_idx = columns.index('avg_duration')
@@ -74,14 +117,19 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.success) as success_rate,
     delta_duration = dict()
     delta_success = dict()
     for n in common_names:
-        d1_tmp = table_hh1[table_hh1[:, source_idx] == n]
-        d2_tmp = table_hh2[table_hh2[:, source_idx] == n]
-        delta_duration[n] = d1_tmp[:, duration_idx].mean() - d2_tmp[:, duration_idx].mean()
-        delta_success[n] = d1_tmp[:, success_idx].mean() - d2_tmp[:, success_idx].mean()
+        d1_tmp = _table_where(table_hh1, source_idx, n)
+        # d1_tmp = table_hh1[table_hh1[:, source_idx] == n]
+        d2_tmp = _table_where(table_hh2, source_idx, n)
+        # d2_tmp = table_hh2[table_hh2[:, source_idx] == n]
+        delta_duration[n] = _mean_table_index(d1_tmp, duration_idx) - _mean_table_index(d2_tmp, duration_idx)
+        # delta_duration[n] = d1_tmp[:, duration_idx].mean() - d2_tmp[:, duration_idx].mean()
+        delta_success[n] = _mean_table_index(d1_tmp, success_idx) - _mean_table_index(d2_tmp, success_idx)
+        # delta_success[n] = d1_tmp[:, success_idx].mean() - d2_tmp[:, success_idx].mean()
 
     names_idx = columns.index('names')
-    d1_tmp = d1_tmp[d1_tmp[:, success_idx].argsort()]
-    return {'ratio': list(zip(d1_tmp[:, names_idx] + d1_tmp[:, source_idx], d1_tmp[:, success_idx])),
+    d1_tmp = _sort_table_index(table_hh1, success_idx)
+    # d1_tmp = d1_tmp[d1_tmp[:, success_idx].argsort()]
+    return {'ratio': list(zip(_table_slice(d1_tmp, source_idx), _table_slice(d1_tmp, success_idx))),
             'increase': sorted(delta_success.items(), key=lambda k: k[1], reverse=False),
             'new_events': new_hosts}
 
@@ -107,24 +155,24 @@ SELECT T1.hh, count(T2.session_id) as sessions, T2.name as names, groupUniqArray
 
     new_errors = [x for x in this_period_errors if x not in last_period_errors]
     common_errors = [x for x in this_period_errors if x not in new_errors]
-    table_hh1, table_hh2, this_period_errors, last_period_errors = np.array(table_hh1), np.array(table_hh2), np.array(
-        this_period_errors), np.array(last_period_errors)
 
     sessions_idx = columns.index('sessions')
     names_idx = columns.index('names')
     percentage_errors = dict()
-    total = table_hh1[:, sessions_idx].sum()
+    total = _sum_table_index(table_hh1, sessions_idx)
+    # total = table_hh1[:, sessions_idx].sum()
     error_increase = dict()
     for n in this_period_errors:
-        percentage_errors[n] = (table_hh1[table_hh1[:, names_idx] == n][:, sessions_idx].sum())/total
+        percentage_errors[n] = _sum_table_index(_table_where(table_hh1, names_idx, n), sessions_idx)/total
+        # percentage_errors[n] = (table_hh1[table_hh1[:, names_idx] == n][:, sessions_idx].sum())/total
     for n in common_errors:
-        error_increase[n] = table_hh1[table_hh1[:, names_idx] == n][:, names_idx].sum() - table_hh2[table_hh2[:, names_idx] == n][:, names_idx].sum()
+        error_increase[n] = _sum_table_index(_table_where(table_hh1, names_idx, n), names_idx) - _sum_table_index(_table_where(table_hh2, names_idx, n), names_idx)
+        # error_increase[n] = table_hh1[table_hh1[:, names_idx] == n][:, names_idx].sum() - table_hh2[table_hh2[:, names_idx] == n][:, names_idx].sum()
     return {'ratio': sorted(percentage_errors.items(), key=lambda k: k[1], reverse=True),
             'increase': sorted(error_increase.items(), key=lambda k: k[1], reverse=True),
             'new_events': new_errors}
 
 
-#TODO Update model
 def query_cpu_memory_by_period(project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),
                         end_time=datetime.now().strftime('%Y-%m-%d'), time_step=3600, conn=None):
     function, steps = __handle_timestep(time_step)
@@ -138,20 +186,22 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.avg_cpu) as cpu_used, avg
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
-    return res
-    df = pd.DataFrame(res)
+    table_hh1, table_hh2, columns, this_period_resources, last_period_resources = __get_two_values(res, time_index='hh',
+                                                                                     name_index='names')
     del res
-    first_ts, second_ts = df['hh'].unique()[:2]
-    df1 = df[df['hh'] == first_ts]
-    df2 = df[df['hh'] == second_ts]
-    _tmp = df2['memory_used'].mean()
-    return {'cpu_increase': df1['cpu_used'].mean() - df2['cpu_used'].mean(),
-            'memory_increase': (df1['memory_used'].mean() - _tmp)/_tmp}
+
+    memory_idx = columns.index('memory_used')
+    cpu_idx = columns.index('cpu_used')
+
+    _tmp = _mean_table_index(table_hh2, memory_idx)
+    # _tmp = table_hh2[:, memory_idx].mean()
+    return {'cpu_increase': _mean_table_index(table_hh1, cpu_idx) - _mean_table_index(table_hh2, cpu_idx),
+            'memory_increase': (_mean_table_index(table_hh1, memory_idx) - _tmp)/_tmp}
 
 
-#TODO Update model
 def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),
                         end_time=datetime.now().strftime('%Y-%m-%d'), time_step=3600, conn=None):
+    return {}
     function, steps = __handle_timestep(time_step)
     click_rage_condition = "name = 'click_rage'"
     query = f"""WITH
@@ -164,36 +214,59 @@ def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
-    return res
-    # df = pd.DataFrame(res)
-    # del res
-    first_ts, second_ts = set(res['hh'])[:2]
-    df1 = df[df['hh'] == first_ts]
-    df2 = df[df['hh'] == second_ts]
 
-    this_period_names = df1['names'].unique()
-    last_period_names = df2['names'].unique()
+    table_hh1, table_hh2, columns, this_period_rage, last_period_rage = __get_two_values(res, time_index='hh',
+                                                                                                   name_index='names')
+    del res
 
-    common_names = list()
-    new_names = list()
-    for n in this_period_names:
-        if n in last_period_names:
-            common_names.append(n)
-        else:
-            new_names.append(n)
+    new_names = [x for x in this_period_rage if x not in last_period_rage]
+    common_names = [x for x in this_period_rage if x not in new_names]
+
+    sessions_idx = columns.index('sessions')
+    names_idx = columns.index('names')
 
     raged_increment = dict()
+    # TODO verify line (188) _tmp = table_hh2[:, sessions_idx][n].sum()
     for n in common_names:
         if n is None:
             continue
-        _tmp = df2['sessions'][n].sum()
-        raged_increment[n] = (df1['sessions'][n].sum()-_tmp)/_tmp
+        _tmp = _sum_table_index(table_hh2, sessions_idx)
+        _tmp = table_hh2[:, sessions_idx][n].sum()
+        raged_increment[n] = (table_hh1[:, sessions_idx][n].sum()-_tmp)/_tmp
 
-    total = df1['sessions'].sum()
-    return {'ratio': list(zip(df1['names'], df1['sessions']/total)),
+    total = table_hh1[:, sessions_idx].sum()
+    return {'ratio': list(zip(table_hh1[:, names_idx], table_hh1[:, sessions_idx]/total)),
             'increase': sorted(raged_increment.items(), key=lambda k: k[1], reverse=True),
             'new_events': new_names,
             }
+
+    # first_ts, second_ts = set(res['hh'])[:2]
+    # df1 = df[df['hh'] == first_ts]
+    # df2 = df[df['hh'] == second_ts]
+    #
+    # this_period_names = df1['names'].unique()
+    # last_period_names = df2['names'].unique()
+    #
+    # common_names = list()
+    # new_names = list()
+    # for n in this_period_names:
+    #     if n in last_period_names:
+    #         common_names.append(n)
+    #     else:
+    #         new_names.append(n)
+    #
+    # raged_increment = dict()
+    # for n in common_names:
+    #     if n is None:
+    #         continue
+    #     _tmp = df2['sessions'][n].sum()
+    #     raged_increment[n] = (df1['sessions'][n].sum()-_tmp)/_tmp
+    #
+    # total = df1['sessions'].sum()
+    # return {'ratio': list(zip(df1['names'], df1['sessions']/total)),
+    #         'increase': sorted(raged_increment.items(), key=lambda k: k[1], reverse=True),
+    #         'new_events': new_names,
+    #         }
 
 
 def fetch_selected(selectedEvents, project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),

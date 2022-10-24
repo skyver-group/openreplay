@@ -98,10 +98,10 @@ def query_requests_by_period(project_id, start_time=(datetime.now()-timedelta(da
   {function.format(f"toDateTime64('{start_time}', 0)")} as start,
   {function.format(f"toDateTime64('{end_time}', 0)")} as end
 SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.success) as success_rate, T2.url_host as names, T2.url_path as source, avg(T2.duration) as avg_duration FROM (SELECT arrayJoin(arrayMap(x -> toDateTime(x), range(toUInt32(start), toUInt32(end), {steps}))) as hh) AS T1
-    LEFT JOIN (SELECT session_id, url_host, url_path, success, message, duration, {function.format('datetime')} as dtime FROM events WHERE project_id = {project_id} AND event_type = 'REQUEST') AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.url_host, T2.url_path ORDER BY T1.hh DESC;
+    LEFT JOIN (SELECT session_id, url_host, url_path, success, message, duration, {function.format('datetime')} as dtime FROM experimental.events WHERE project_id = {project_id} AND event_type = 'REQUEST') AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.url_host, T2.url_path ORDER BY T1.hh DESC;
     """
     if conn is None:
-        with ch_client.ClickHouseClient(database='experimental') as conn:
+        with ch_client.ClickHouseClient() as conn:
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
@@ -141,10 +141,10 @@ def query_most_errors_by_period(project_id, start_time=(datetime.now()-timedelta
   {function.format(f"toDateTime64('{start_time}', 0)")} as start,
   {function.format(f"toDateTime64('{end_time}', 0)")} as end
 SELECT T1.hh, count(T2.session_id) as sessions, T2.name as names, groupUniqArray(T2.source) as sources FROM (SELECT arrayJoin(arrayMap(x -> toDateTime(x), range(toUInt32(start), toUInt32(end), {steps}))) as hh) AS T1
-    LEFT JOIN (SELECT session_id, name, source, message, {function.format('datetime')} as dtime FROM events WHERE project_id = {project_id} AND event_type = 'ERROR') AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.name ORDER BY T1.hh DESC;
+    LEFT JOIN (SELECT session_id, name, source, message, {function.format('datetime')} as dtime FROM experimental.events WHERE project_id = {project_id} AND event_type = 'ERROR') AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.name ORDER BY T1.hh DESC;
     """
     if conn is None:
-        with ch_client.ClickHouseClient(database='experimental') as conn:
+        with ch_client.ClickHouseClient() as conn:
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
@@ -180,9 +180,9 @@ def query_cpu_memory_by_period(project_id, start_time=(datetime.now()-timedelta(
   {function.format(f"toDateTime64('{start_time}', 0)")} as start,
   {function.format(f"toDateTime64('{end_time}', 0)")} as end
 SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.avg_cpu) as cpu_used, avg(T2.avg_used_js_heap_size) as memory_used, T2.url_host as names, groupUniqArray(T2.url_path) as sources FROM (SELECT arrayJoin(arrayMap(x -> toDateTime(x), range(toUInt32(start), toUInt32(end), {steps}))) as hh) AS T1
-    LEFT JOIN (SELECT session_id, url_host, url_path, avg_used_js_heap_size, avg_cpu, {function.format('datetime')} as dtime FROM events WHERE project_id = {project_id} AND event_type = 'PERFORMANCE') AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.url_host ORDER BY T1.hh DESC;"""
+    LEFT JOIN (SELECT session_id, url_host, url_path, avg_used_js_heap_size, avg_cpu, {function.format('datetime')} as dtime FROM experimental.events WHERE project_id = {project_id} AND event_type = 'PERFORMANCE') AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.url_host ORDER BY T1.hh DESC;"""
     if conn is None:
-        with ch_client.ClickHouseClient(database='experimental') as conn:
+        with ch_client.ClickHouseClient() as conn:
             res = conn.execute(query=query)
     else:
         res = conn.execute(query=query)
@@ -208,7 +208,7 @@ def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(
       {function.format(f"toDateTime64('{start_time}', 0)")} as start,
       {function.format(f"toDateTime64('{end_time}', 0)")} as end
     SELECT T1.hh, count(T2.session_id) as sessions, T2.url_host as names, groupUniqArray(T2.url_path) as sources FROM (SELECT arrayJoin(arrayMap(x -> toDateTime(x), range(toUInt32(start), toUInt32(end), {steps}))) as hh) AS T1
-        LEFT JOIN (SELECT session_id, url_host, url_path, {function.format('datetime')} as dtime FROM events WHERE project_id = {project_id} AND event_type = 'ISSUE' AND {click_rage_condition}) AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.url_host ORDER BY T1.hh DESC;"""
+        LEFT JOIN (SELECT session_id, url_host, url_path, {function.format('datetime')} as dtime FROM experimental.events WHERE project_id = {project_id} AND event_type = 'ISSUE' AND {click_rage_condition}) AS T2 ON T2.dtime = T1.hh GROUP BY T1.hh, T2.url_host ORDER BY T1.hh DESC;"""
     if conn is None:
         with ch_client.ClickHouseClient(database='experimental') as conn:
             res = conn.execute(query=query)
@@ -240,41 +240,13 @@ def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(
             'new_events': new_names,
             }
 
-    # first_ts, second_ts = set(res['hh'])[:2]
-    # df1 = df[df['hh'] == first_ts]
-    # df2 = df[df['hh'] == second_ts]
-    #
-    # this_period_names = df1['names'].unique()
-    # last_period_names = df2['names'].unique()
-    #
-    # common_names = list()
-    # new_names = list()
-    # for n in this_period_names:
-    #     if n in last_period_names:
-    #         common_names.append(n)
-    #     else:
-    #         new_names.append(n)
-    #
-    # raged_increment = dict()
-    # for n in common_names:
-    #     if n is None:
-    #         continue
-    #     _tmp = df2['sessions'][n].sum()
-    #     raged_increment[n] = (df1['sessions'][n].sum()-_tmp)/_tmp
-    #
-    # total = df1['sessions'].sum()
-    # return {'ratio': list(zip(df1['names'], df1['sessions']/total)),
-    #         'increase': sorted(raged_increment.items(), key=lambda k: k[1], reverse=True),
-    #         'new_events': new_names,
-    #         }
-
 
 def fetch_selected(selectedEvents, project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),
                         end_time=datetime.now().strftime('%Y-%m-%d'), time_step=3600):
     assert len(selectedEvents) > 0, """'list of selected events must be non empty. Available events are 'errors',
     'network', 'rage' and 'resources''"""
     output = {}
-    with ch_client.ClickHouseClient(database='experimental') as conn:
+    with ch_client.ClickHouseClient() as conn:
         if 'errors' in selectedEvents:
             output['errors'] = query_most_errors_by_period(project_id, start_time, end_time, time_step, conn=conn)
         if 'network' in selectedEvents:

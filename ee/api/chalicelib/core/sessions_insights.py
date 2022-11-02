@@ -201,9 +201,8 @@ SELECT T1.hh, count(T2.session_id) as sessions, avg(T2.avg_cpu) as cpu_used, avg
 
 def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'),
                         end_time=datetime.now().strftime('%Y-%m-%d'), time_step=3600, conn=None):
-    return {}
     function, steps = __handle_timestep(time_step)
-    click_rage_condition = "name = 'click_rage'"
+    click_rage_condition = "issue_type = 'click_rage'"
     query = f"""WITH
       {function.format(f"toDateTime64('{start_time}', 0)")} as start,
       {function.format(f"toDateTime64('{end_time}', 0)")} as end
@@ -230,12 +229,14 @@ def query_click_rage_by_period(project_id, start_time=(datetime.now()-timedelta(
     for n in common_names:
         if n is None:
             continue
-        _tmp = _sum_table_index(table_hh2, sessions_idx)
-        _tmp = table_hh2[:, sessions_idx][n].sum()
-        raged_increment[n] = (table_hh1[:, sessions_idx][n].sum()-_tmp)/_tmp
+        _tmp = _sum_table_index(_table_where(table_hh2, names_idx, n), sessions_idx)
+        # _tmp = table_hh2[:, sessions_idx][n].sum()
+        raged_increment[n] = (_sum_table_index(_table_where(table_hh1, names_idx, n), sessions_idx)-_tmp)/_tmp
+        # raged_increment[n] = (table_hh1[:, sessions_idx][n].sum()-_tmp)/_tmp
 
-    total = table_hh1[:, sessions_idx].sum()
-    return {'ratio': list(zip(table_hh1[:, names_idx], table_hh1[:, sessions_idx]/total)),
+    total = _sum_table_index(table_hh1, sessions_idx)
+    # total = table_hh1[:, sessions_idx].sum()
+    return {'ratio': list(zip(_table_slice(table_hh1, names_idx), map(lambda k: k/total, _table_slice(table_hh1, sessions_idx)))),
             'increase': sorted(raged_increment.items(), key=lambda k: k[1], reverse=True),
             'new_events': new_names,
             }

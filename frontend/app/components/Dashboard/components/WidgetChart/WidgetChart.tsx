@@ -15,8 +15,6 @@ import useIsMounted from 'App/hooks/useIsMounted'
 import { FilterKey } from 'Types/filter/filterType';
 import { TIMESERIES, TABLE, CLICKMAP, FUNNEL, ERRORS, PERFORMANCE, RESOURCE_MONITORING, WEB_VITALS, INSIGHTS } from 'App/constants/card';
 import FunnelWidget from 'App/components/Funnels/FunnelWidget';
-import ErrorsWidget from '../Errors/ErrorsWidget';
-import SessionWidget from '../Sessions/SessionWidget';
 import CustomMetricTableSessions from 'App/components/Dashboard/Widgets/CustomMetricsWidgets/CustomMetricTableSessions';
 import CustomMetricTableErrors from 'App/components/Dashboard/Widgets/CustomMetricsWidgets/CustomMetricTableErrors';
 import ClickMapCard from 'App/components/Dashboard/Widgets/CustomMetricsWidgets/ClickMapCard'
@@ -96,15 +94,7 @@ function WidgetChart(props: Props) {
 
     const renderChart = () => {
         const { metricType, viewType, metricOf } = metric;
-
         const metricWithData = { ...metric, data };
-        if (metricType === 'sessions') {
-            return <SessionWidget metric={metric} data={data} />
-        }
-
-        // if (metricType === ERRORS) {
-        //     return <ErrorsWidget metric={metric} data={data} />
-        // }
 
         if (metricType === FUNNEL) {
             return <FunnelWidget metric={metric} data={data} isWidget={isWidget || isTemplate} />
